@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Lock, Mail, ShieldCheck, AlertCircle } from "lucide-react";
 import GlowButton from "@/components/ui/GlowButton";
 import RiskPulse from "@/components/ui/RiskPulse";
@@ -11,7 +10,6 @@ import Logo from "@/components/ui/Logo";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,20 +20,32 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const supabase = createClient();
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (signInError) {
-      setError("Invalid email or password.");
+      if (signInError) {
+        setError("Invalid email or password.");
+        setLoading(false);
+        return;
+      }
+
+      // Hard navigation (not router.push) so the freshly-set session
+      // cookie is guaranteed to be committed and sent on the very next
+      // request — middleware reads it server-side, and a soft client-side
+      // push can race ahead of that cookie actually being written.
+      window.location.href = "/dashboard";
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `Something went wrong: ${err.message}`
+          : "Something went wrong. Please try again."
+      );
       setLoading(false);
-      return;
     }
-
-    router.push("/dashboard");
-    router.refresh();
   }
 
   return (
