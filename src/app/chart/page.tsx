@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   Calculator,
@@ -19,9 +19,18 @@ import {
   StickyNote,
   TimerReset,
   TrendingUp,
+  Pencil,
+  Minus,
+  Square,
+  Undo2,
+  Trash2,
+  Cloud,
+  CloudOff,
 } from "lucide-react";
 import AppShell from "@/components/layout/AppShell";
 import TradingViewWidget from "@/components/TradingViewWidget";
+import ChartDrawingOverlay, { Drawing, DrawingTool } from "@/components/ChartDrawingOverlay";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 const symbols = [
@@ -98,7 +107,11 @@ export default function ChartPage() {
   const [checks, setChecks] = useState<boolean[]>(checklistItems.map(() => false));
   const [now, setNow] = useState(() => new Date());
   const [activeIndicators, setActiveIndicators] = useState<string[]>([]);
-
+  const [drawingTool, setDrawingTool] = useState<DrawingTool>("none");
+  const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const loadSequence = useRef(0);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
@@ -117,6 +130,48 @@ export default function ChartPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const sequence = ++loadSequence.current;
+    setWorkspaceReady(false);
+    setSaveState("idle");
+
+    async function loadWorkspace() {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || cancelled || sequence !== loadSequence.current) return;
+
+      const { data, error } = await supabase
+        .from("chart_workspaces")
+        .select("workspace, drawings")
+        .eq("user_id", user.id)
+        .eq("symbol", symbol)
+        .eq("interval", interval)
+        .maybeSingle();
+
+      if (cancelled || sequence !== loadSequence.current) return;
+      if (!error && data) {
+        const workspace = (data.workspace ?? {}) as Record<string, unknown>;
+        if (Array.isArray(workspace.indicators)) setActiveIndicators(workspace.indicators as string[]);
+        if (typeof workspace.notes === "string") setNotes(workspace.notes);
+        if (typeof workspace.accountBalance === "string") setAccountBalance(workspace.accountBalance);
+        if (typeof workspace.riskPct === "string") setRiskPct(workspace.riskPct);
+        if (typeof workspace.stopPips === "string") setStopPips(workspace.stopPips);
+        if (typeof workspace.pipValue === "string") setPipValue(workspace.pipValue);
+        if (Array.isArray(workspace.checks)) setChecks(workspace.checks as boolean[]);
+        if (typeof workspace.watchlistOpen === "boolean") setWatchlistOpen(workspace.watchlistOpen);
+        if (typeof workspace.toolsOpen === "boolean") setToolsOpen(workspace.toolsOpen);
+        setDrawings(Array.isArray(data.drawings) ? data.drawings as Drawing[] : []);
+      } else {
+        setDrawings([]);
+      }
+      setWorkspaceReady(true);
+    }
+
+    loadWorkspace();
+    return () => { cancelled = true; };
+  }, [symbol, interval]);
+
+  useEffect(() => {
     window.localStorage.setItem("nava-terminal-watchlist-open", String(watchlistOpen));
   }, [watchlistOpen]);
 
@@ -127,6 +182,26 @@ export default function ChartPage() {
   useEffect(() => {
     window.localStorage.setItem("nava-terminal-indicators", JSON.stringify(activeIndicators));
   }, [activeIndicators]);
+
+  useEffect(() => {
+    if (!workspaceReady) return;
+    setSaveState("saving");
+    const timer = window.setTimeout(async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setSaveState("error"); return; }
+
+      const workspace = {
+        indicators: activeIndicators, notes, accountBalance, riskPct, stopPips, pipValue,
+        checks, watchlistOpen, toolsOpen,
+      };
+      const { error } = await supabase.from("chart_workspaces").upsert({
+        user_id: user.id, symbol, interval, workspace, drawings, updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id,symbol,interval" });
+      setSaveState(error ? "error" : "saved");
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [workspaceReady, symbol, interval, activeIndicators, notes, accountBalance, riskPct, stopPips, pipValue, checks, watchlistOpen, toolsOpen, drawings]);
 
   const filteredSymbols = symbols.filter((item) =>
     item.label.toLowerCase().includes(query.toLowerCase())
@@ -193,6 +268,16 @@ export default function ChartPage() {
                 minute: "2-digit",
                 hour12: true,
               }).format(now)} IST
+            </div>
+            <div
+              className={cn(
+                "hidden items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] font-semibold sm:flex",
+                saveState === "error" ? "border-loss/30 text-loss" : "border-void-border text-bone-faint"
+              )}
+              title="Workspace and NAVA annotations auto-save to Supabase"
+            >
+              {saveState === "error" ? <CloudOff size={13} /> : <Cloud size={13} className={saveState === "saving" ? "animate-pulse text-gold" : "text-profit"} />}
+              {saveState === "saving" ? "Saving…" : saveState === "error" ? "Save failed" : saveState === "saved" ? "Saved" : "Cloud save"}
             </div>
             <a
               href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`}
@@ -291,12 +376,32 @@ export default function ChartPage() {
           </aside>
 
           <main className="min-w-0 bg-void-950 p-2">
-            <TradingViewWidget
-              symbol={symbol}
-              interval={interval}
-              studies={activeIndicators}
-              height={fullscreen ? "calc(100vh - 72px)" : "calc(100vh - 168px)"}
-            />
+            <div className="relative h-full min-h-[520px] overflow-hidden rounded-xl">
+              <TradingViewWidget
+                symbol={symbol}
+                interval={interval}
+                studies={activeIndicators}
+                height={fullscreen ? "calc(100vh - 72px)" : "calc(100vh - 168px)"}
+              />
+              <ChartDrawingOverlay tool={drawingTool} drawings={drawings} onChange={setDrawings} />
+
+              <div className="absolute left-3 top-3 z-30 flex items-center gap-1 rounded-xl border border-void-border bg-void-900/95 p-1.5 shadow-card backdrop-blur">
+                <DrawingButton active={drawingTool === "none"} title="Use chart" onClick={() => setDrawingTool("none")}><TrendingUp size={15} /></DrawingButton>
+                <DrawingButton active={drawingTool === "line"} title="Trend line" onClick={() => setDrawingTool("line")}><Pencil size={15} /></DrawingButton>
+                <DrawingButton active={drawingTool === "horizontal"} title="Horizontal line" onClick={() => setDrawingTool("horizontal")}><Minus size={15} /></DrawingButton>
+                <DrawingButton active={drawingTool === "rectangle"} title="Rectangle" onClick={() => setDrawingTool("rectangle")}><Square size={15} /></DrawingButton>
+                <DrawingButton active={drawingTool === "freehand"} title="Freehand" onClick={() => setDrawingTool("freehand")}><Pencil size={15} className="rotate-12" /></DrawingButton>
+                <span className="mx-1 h-5 w-px bg-void-border" />
+                <DrawingButton title="Undo last NAVA drawing" disabled={drawings.length === 0} onClick={() => setDrawings((current) => current.slice(0, -1))}><Undo2 size={15} /></DrawingButton>
+                <DrawingButton title="Delete all NAVA drawings" disabled={drawings.length === 0} onClick={() => { if (window.confirm("Delete all saved NAVA drawings for this symbol and timeframe?")) setDrawings([]); }}><Trash2 size={15} /></DrawingButton>
+              </div>
+
+              {drawingTool !== "none" && (
+                <div className="absolute bottom-3 left-1/2 z-30 -translate-x-1/2 rounded-full border border-gold/25 bg-void-900/95 px-4 py-2 text-[11px] font-semibold text-gold shadow-card">
+                  NAVA drawing mode · saved for {activeSymbol.label} / {interval}
+                </div>
+              )}
+            </div>
           </main>
 
           <aside
@@ -497,6 +602,24 @@ export default function ChartPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function DrawingButton({ active = false, disabled = false, title, onClick, children }: { active?: boolean; disabled?: boolean; title: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded-lg transition",
+        active ? "bg-gold text-void-950" : "text-bone-faint hover:bg-void-700 hover:text-gold",
+        disabled && "cursor-not-allowed opacity-35"
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
