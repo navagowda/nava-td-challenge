@@ -1,13 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   Calculator,
   CheckCircle2,
   Clock3,
+  ExternalLink,
   Maximize2,
   Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Search,
   Star,
   StickyNote,
@@ -49,12 +54,30 @@ export default function ChartPage() {
   const [interval, setInterval] = useState("15");
   const [query, setQuery] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
+  const [watchlistOpen, setWatchlistOpen] = useState(true);
+  const [toolsOpen, setToolsOpen] = useState(true);
   const [accountBalance, setAccountBalance] = useState("10000");
   const [riskPct, setRiskPct] = useState("1");
   const [stopPips, setStopPips] = useState("20");
   const [pipValue, setPipValue] = useState("10");
   const [notes, setNotes] = useState("");
   const [checks, setChecks] = useState<boolean[]>(checklistItems.map(() => false));
+
+
+  useEffect(() => {
+    const savedWatchlist = window.localStorage.getItem("nava-terminal-watchlist-open");
+    const savedTools = window.localStorage.getItem("nava-terminal-tools-open");
+    if (savedWatchlist !== null) setWatchlistOpen(savedWatchlist === "true");
+    if (savedTools !== null) setToolsOpen(savedTools === "true");
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("nava-terminal-watchlist-open", String(watchlistOpen));
+  }, [watchlistOpen]);
+
+  useEffect(() => {
+    window.localStorage.setItem("nava-terminal-tools-open", String(toolsOpen));
+  }, [toolsOpen]);
 
   const filteredSymbols = symbols.filter((item) =>
     item.label.toLowerCase().includes(query.toLowerCase())
@@ -117,6 +140,16 @@ export default function ChartPage() {
               <Clock3 size={14} className="text-gold" />
               Asia/Kolkata
             </div>
+            <a
+              href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-9 items-center gap-2 rounded-xl border border-void-border bg-void-850 px-3 text-xs font-semibold text-bone-dim transition hover:border-gold/40 hover:text-gold"
+              title="Open full TradingView with saved drawings and layouts"
+            >
+              <ExternalLink size={15} />
+              <span className="hidden sm:inline">TradingView</span>
+            </a>
             <button
               onClick={() => setFullscreen((value) => !value)}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-void-border bg-void-850 text-bone-dim transition hover:border-gold/40 hover:text-gold"
@@ -127,45 +160,80 @@ export default function ChartPage() {
           </div>
         </header>
 
-        <div className="grid min-h-[calc(100vh-150px)] grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)_280px]">
-          <aside className="hidden border-r border-void-border bg-void-900/80 xl:block">
-            <div className="border-b border-void-border p-3">
-              <div className="flex items-center gap-2 rounded-xl border border-void-border bg-void-850 px-3 py-2">
-                <Search size={14} className="text-bone-faint" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search markets"
-                  className="w-full bg-transparent text-xs text-bone outline-none placeholder:text-bone-faint"
-                />
-              </div>
-            </div>
+        <div className="grid min-h-[calc(100vh-150px)] grid-cols-1 transition-[grid-template-columns] duration-200 xl:grid-cols-[auto_minmax(0,1fr)_auto]">
+          <aside
+            className={cn(
+              "relative hidden border-r border-void-border bg-void-900/80 transition-all duration-200 xl:block",
+              watchlistOpen ? "w-[220px]" : "w-[42px]"
+            )}
+          >
+            <button
+              onClick={() => setWatchlistOpen((value) => !value)}
+              className="absolute -right-3 top-4 z-20 flex h-7 w-7 items-center justify-center rounded-full border border-void-border bg-void-850 text-bone-faint shadow-lg transition hover:border-gold/40 hover:text-gold"
+              aria-label={watchlistOpen ? "Collapse watchlist" : "Expand watchlist"}
+              title={watchlistOpen ? "Collapse watchlist" : "Expand watchlist"}
+            >
+              {watchlistOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
+            </button>
 
-            <div className="flex items-center justify-between px-4 pb-2 pt-4">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-bone-faint">Watchlist</span>
-              <Star size={13} className="text-gold" />
-            </div>
-
-            <div className="space-y-1 px-2 pb-4">
-              {filteredSymbols.map((item) => (
-                <button
-                  key={item.value}
-                  onClick={() => setSymbol(item.value)}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-xl px-3 py-3 text-left transition",
-                    symbol === item.value
-                      ? "border border-gold/30 bg-gold/10"
-                      : "border border-transparent hover:bg-void-850"
-                  )}
-                >
-                  <div>
-                    <p className={cn("text-sm font-semibold", symbol === item.value ? "text-gold" : "text-bone")}>{item.label}</p>
-                    <p className="mt-0.5 text-[10px] uppercase tracking-wider text-bone-faint">{item.category}</p>
+            {watchlistOpen ? (
+              <>
+                <div className="border-b border-void-border p-3">
+                  <div className="flex items-center gap-2 rounded-xl border border-void-border bg-void-850 px-3 py-2">
+                    <Search size={14} className="text-bone-faint" />
+                    <input
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Search markets"
+                      className="w-full bg-transparent text-xs text-bone outline-none placeholder:text-bone-faint"
+                    />
                   </div>
-                  <BarChart3 size={15} className={symbol === item.value ? "text-gold" : "text-bone-faint"} />
-                </button>
-              ))}
-            </div>
+                </div>
+
+                <div className="flex items-center justify-between px-4 pb-2 pt-4">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-bone-faint">Watchlist</span>
+                  <Star size={13} className="text-gold" />
+                </div>
+
+                <div className="space-y-1 px-2 pb-4">
+                  {filteredSymbols.map((item) => (
+                    <button
+                      key={item.value}
+                      onClick={() => setSymbol(item.value)}
+                      className={cn(
+                        "flex w-full items-center justify-between rounded-xl px-3 py-3 text-left transition",
+                        symbol === item.value
+                          ? "border border-gold/30 bg-gold/10"
+                          : "border border-transparent hover:bg-void-850"
+                      )}
+                    >
+                      <div>
+                        <p className={cn("text-sm font-semibold", symbol === item.value ? "text-gold" : "text-bone")}>{item.label}</p>
+                        <p className="mt-0.5 text-[10px] uppercase tracking-wider text-bone-faint">{item.category}</p>
+                      </div>
+                      <BarChart3 size={15} className={symbol === item.value ? "text-gold" : "text-bone-faint"} />
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex h-full flex-col items-center gap-3 pt-14">
+                <Star size={15} className="text-gold" />
+                {symbols.slice(0, 6).map((item) => (
+                  <button
+                    key={item.value}
+                    onClick={() => setSymbol(item.value)}
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-lg text-[9px] font-bold transition",
+                      symbol === item.value ? "bg-gold text-void-950" : "bg-void-850 text-bone-faint hover:text-gold"
+                    )}
+                    title={item.label}
+                  >
+                    {item.label.slice(0, 2)}
+                  </button>
+                ))}
+              </div>
+            )}
           </aside>
 
           <main className="min-w-0 bg-void-950 p-2">
@@ -176,65 +244,87 @@ export default function ChartPage() {
             />
           </main>
 
-          <aside className="border-t border-void-border bg-void-900/80 xl:border-l xl:border-t-0">
-            <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-1">
-              <section className="rounded-2xl border border-void-border bg-void-850 p-4">
-                <div className="mb-4 flex items-center gap-2">
-                  <Calculator size={16} className="text-gold" />
-                  <h2 className="text-sm font-semibold text-bone">Position Size</h2>
-                </div>
+          <aside
+            className={cn(
+              "relative border-t border-void-border bg-void-900/80 transition-all duration-200 xl:border-l xl:border-t-0",
+              toolsOpen ? "xl:w-[280px]" : "xl:w-[42px]"
+            )}
+          >
+            <button
+              onClick={() => setToolsOpen((value) => !value)}
+              className="absolute -left-3 top-4 z-20 hidden h-7 w-7 items-center justify-center rounded-full border border-void-border bg-void-850 text-bone-faint shadow-lg transition hover:border-gold/40 hover:text-gold xl:flex"
+              aria-label={toolsOpen ? "Collapse trading tools" : "Expand trading tools"}
+              title={toolsOpen ? "Collapse trading tools" : "Expand trading tools"}
+            >
+              {toolsOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+            </button>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Balance" value={accountBalance} onChange={setAccountBalance} prefix="$" />
-                  <Field label="Risk" value={riskPct} onChange={setRiskPct} suffix="%" />
-                  <Field label="Stop" value={stopPips} onChange={setStopPips} suffix="pips" />
-                  <Field label="Pip value" value={pipValue} onChange={setPipValue} prefix="$" />
-                </div>
-
-                <div className="mt-3 rounded-xl border border-gold/20 bg-gold/10 p-3">
-                  <p className="text-[10px] uppercase tracking-widest text-bone-faint">Suggested size</p>
-                  <p className="mt-1 font-mono text-xl font-bold text-gold">{positionSize.toFixed(2)} lots</p>
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-void-border bg-void-850 p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 size={16} className="text-profit" />
-                    <h2 className="text-sm font-semibold text-bone">Pre-trade Checklist</h2>
+            {toolsOpen ? (
+              <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-1">
+                <section className="rounded-2xl border border-void-border bg-void-850 p-4">
+                  <div className="mb-4 flex items-center gap-2">
+                    <Calculator size={16} className="text-gold" />
+                    <h2 className="text-sm font-semibold text-bone">Position Size</h2>
                   </div>
-                  <span className="text-xs font-semibold text-gold">{completedChecks}/{checklistItems.length}</span>
-                </div>
-                <div className="space-y-2">
-                  {checklistItems.map((item, index) => (
-                    <label key={item} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-xs text-bone-dim hover:bg-void-700">
-                      <input
-                        type="checkbox"
-                        checked={checks[index]}
-                        onChange={() =>
-                          setChecks((current) => current.map((checked, itemIndex) => (itemIndex === index ? !checked : checked)))
-                        }
-                        className="h-4 w-4 accent-gold"
-                      />
-                      {item}
-                    </label>
-                  ))}
-                </div>
-              </section>
 
-              <section className="rounded-2xl border border-void-border bg-void-850 p-4 sm:col-span-2 xl:col-span-1">
-                <div className="mb-3 flex items-center gap-2">
-                  <StickyNote size={16} className="text-gold" />
-                  <h2 className="text-sm font-semibold text-bone">Quick Notes</h2>
-                </div>
-                <textarea
-                  value={notes}
-                  onChange={(event) => setNotes(event.target.value)}
-                  placeholder="Market bias, key levels, setup conditions..."
-                  className="min-h-28 w-full resize-none rounded-xl border border-void-border bg-void-950 p-3 text-xs leading-relaxed text-bone outline-none placeholder:text-bone-faint focus:border-gold/40"
-                />
-              </section>
-            </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="Balance" value={accountBalance} onChange={setAccountBalance} prefix="$" />
+                    <Field label="Risk" value={riskPct} onChange={setRiskPct} suffix="%" />
+                    <Field label="Stop" value={stopPips} onChange={setStopPips} suffix="pips" />
+                    <Field label="Pip value" value={pipValue} onChange={setPipValue} prefix="$" />
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-gold/20 bg-gold/10 p-3">
+                    <p className="text-[10px] uppercase tracking-widest text-bone-faint">Suggested size</p>
+                    <p className="mt-1 font-mono text-xl font-bold text-gold">{positionSize.toFixed(2)} lots</p>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-void-border bg-void-850 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-profit" />
+                      <h2 className="text-sm font-semibold text-bone">Pre-trade Checklist</h2>
+                    </div>
+                    <span className="text-xs font-semibold text-gold">{completedChecks}/{checklistItems.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {checklistItems.map((item, index) => (
+                      <label key={item} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-xs text-bone-dim hover:bg-void-700">
+                        <input
+                          type="checkbox"
+                          checked={checks[index]}
+                          onChange={() =>
+                            setChecks((current) => current.map((checked, itemIndex) => (itemIndex === index ? !checked : checked)))
+                          }
+                          className="h-4 w-4 accent-gold"
+                        />
+                        {item}
+                      </label>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-void-border bg-void-850 p-4 sm:col-span-2 xl:col-span-1">
+                  <div className="mb-3 flex items-center gap-2">
+                    <StickyNote size={16} className="text-gold" />
+                    <h2 className="text-sm font-semibold text-bone">Quick Notes</h2>
+                  </div>
+                  <textarea
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                    placeholder="Market bias, key levels, setup conditions..."
+                    className="min-h-28 w-full resize-none rounded-xl border border-void-border bg-void-950 p-3 text-xs leading-relaxed text-bone outline-none placeholder:text-bone-faint focus:border-gold/40"
+                  />
+                </section>
+              </div>
+            ) : (
+              <div className="hidden h-full flex-col items-center gap-4 pt-14 xl:flex">
+                <Calculator size={16} className="text-gold" />
+                <CheckCircle2 size={16} className="text-profit" />
+                <StickyNote size={16} className="text-bone-faint" />
+              </div>
+            )}
           </aside>
         </div>
       </div>
