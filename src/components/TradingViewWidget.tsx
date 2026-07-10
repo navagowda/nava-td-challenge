@@ -23,6 +23,13 @@ export default function TradingViewWidget({
     if (!container.current) return;
     container.current.innerHTML = "";
 
+    // TradingView's autosize feature measures against a specific sibling
+    // div — it must exist in the DOM before the script runs, and be
+    // recreated fresh each time (not reused across re-renders).
+    const widgetDiv = document.createElement("div");
+    widgetDiv.className = "tradingview-widget-container__widget h-full w-full";
+    container.current.appendChild(widgetDiv);
+
     const script = document.createElement("script");
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
     script.type = "text/javascript";
@@ -50,9 +57,7 @@ export default function TradingViewWidget({
     <div
       className="tradingview-widget-container w-full min-w-0 overflow-hidden rounded-2xl border border-void-border"
       ref={container}
-      style={{ height }}
-    >
-      <div className="tradingview-widget-container__widget h-full w-full" />
-    </div>
+      style={{ height, minHeight: height }}
+    />
   );
 }

@@ -47,6 +47,8 @@ export default function SettingsPage() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    setSavedMessage("Settings exported — check your downloads.");
+    setTimeout(() => setSavedMessage(null), 3000);
   }
 
   function handleImportClick() {
