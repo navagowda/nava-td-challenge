@@ -6,6 +6,7 @@ import {
   Calculator,
   CheckCircle2,
   Clock3,
+  Globe2,
   ExternalLink,
   Maximize2,
   Minimize2,
@@ -16,6 +17,7 @@ import {
   Search,
   Star,
   StickyNote,
+  TimerReset,
   TrendingUp,
 } from "lucide-react";
 import AppShell from "@/components/layout/AppShell";
@@ -42,6 +44,38 @@ const intervals = [
   { label: "1D", value: "D" },
 ];
 
+
+const tradingSessions = [
+  { name: "Asia", startUtc: 0, endUtc: 9, note: "Tokyo / Sydney overlap" },
+  { name: "London", startUtc: 8, endUtc: 17, note: "Highest European liquidity" },
+  { name: "New York", startUtc: 13, endUtc: 22, note: "US session and London overlap" },
+];
+
+function getSessionState(now: Date, startUtc: number, endUtc: number) {
+  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const start = startUtc * 60;
+  const end = endUtc * 60;
+  const active = utcMinutes >= start && utcMinutes < end;
+  const minutesUntil = active ? end - utcMinutes : utcMinutes < start ? start - utcMinutes : 24 * 60 - utcMinutes + start;
+  return { active, minutesUntil };
+}
+
+function formatCountdown(totalMinutes: number) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h ${minutes.toString().padStart(2, "0")}m`;
+}
+
+
+const indicatorOptions = [
+  { label: "EMA", study: "MAExp@tv-basicstudies", note: "Exponential moving average" },
+  { label: "VWAP", study: "VWAP@tv-basicstudies", note: "Volume-weighted average price" },
+  { label: "Volume", study: "Volume@tv-basicstudies", note: "Trading volume" },
+  { label: "ATR", study: "ATR@tv-basicstudies", note: "Average true range" },
+  { label: "RSI", study: "RSI@tv-basicstudies", note: "Relative strength index" },
+  { label: "MACD", study: "MACD@tv-basicstudies", note: "Momentum and trend" },
+];
+
 const checklistItems = [
   "Trend confirmed",
   "Key level marked",
@@ -62,13 +96,24 @@ export default function ChartPage() {
   const [pipValue, setPipValue] = useState("10");
   const [notes, setNotes] = useState("");
   const [checks, setChecks] = useState<boolean[]>(checklistItems.map(() => false));
+  const [now, setNow] = useState(() => new Date());
+  const [activeIndicators, setActiveIndicators] = useState<string[]>([]);
 
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const savedWatchlist = window.localStorage.getItem("nava-terminal-watchlist-open");
     const savedTools = window.localStorage.getItem("nava-terminal-tools-open");
+    const savedIndicators = window.localStorage.getItem("nava-terminal-indicators");
     if (savedWatchlist !== null) setWatchlistOpen(savedWatchlist === "true");
     if (savedTools !== null) setToolsOpen(savedTools === "true");
+    if (savedIndicators) {
+      try { setActiveIndicators(JSON.parse(savedIndicators)); } catch { /* ignore invalid saved data */ }
+    }
   }, []);
 
   useEffect(() => {
@@ -78,6 +123,10 @@ export default function ChartPage() {
   useEffect(() => {
     window.localStorage.setItem("nava-terminal-tools-open", String(toolsOpen));
   }, [toolsOpen]);
+
+  useEffect(() => {
+    window.localStorage.setItem("nava-terminal-indicators", JSON.stringify(activeIndicators));
+  }, [activeIndicators]);
 
   const filteredSymbols = symbols.filter((item) =>
     item.label.toLowerCase().includes(query.toLowerCase())
@@ -138,7 +187,12 @@ export default function ChartPage() {
           <div className="flex items-center gap-2">
             <div className="hidden items-center gap-2 rounded-xl border border-void-border bg-void-850 px-3 py-2 text-xs text-bone-dim md:flex">
               <Clock3 size={14} className="text-gold" />
-              Asia/Kolkata
+              {new Intl.DateTimeFormat("en-IN", {
+                timeZone: "Asia/Kolkata",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: true,
+              }).format(now)} IST
             </div>
             <a
               href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`}
@@ -240,6 +294,7 @@ export default function ChartPage() {
             <TradingViewWidget
               symbol={symbol}
               interval={interval}
+              studies={activeIndicators}
               height={fullscreen ? "calc(100vh - 72px)" : "calc(100vh - 168px)"}
             />
           </main>
@@ -260,7 +315,7 @@ export default function ChartPage() {
             </button>
 
             {toolsOpen ? (
-              <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-1">
+              <div className="grid max-h-[calc(100vh-168px)] gap-3 overflow-y-auto p-3 sm:grid-cols-2 xl:grid-cols-1">
                 <section className="rounded-2xl border border-void-border bg-void-850 p-4">
                   <div className="mb-4 flex items-center gap-2">
                     <Calculator size={16} className="text-gold" />
@@ -278,6 +333,118 @@ export default function ChartPage() {
                     <p className="text-[10px] uppercase tracking-widest text-bone-faint">Suggested size</p>
                     <p className="mt-1 font-mono text-xl font-bold text-gold">{positionSize.toFixed(2)} lots</p>
                   </div>
+                </section>
+
+
+                <section className="rounded-2xl border border-void-border bg-void-850 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <BarChart3 size={16} className="text-gold" />
+                      <h2 className="text-sm font-semibold text-bone">Indicators</h2>
+                    </div>
+                    <button
+                      onClick={() => setActiveIndicators([])}
+                      className="text-[10px] font-semibold uppercase tracking-wider text-bone-faint hover:text-gold"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {indicatorOptions.map((item) => {
+                      const enabled = activeIndicators.includes(item.study);
+                      return (
+                        <button
+                          key={item.study}
+                          onClick={() =>
+                            setActiveIndicators((current) =>
+                              enabled ? current.filter((study) => study !== item.study) : [...current, item.study]
+                            )
+                          }
+                          className={cn(
+                            "rounded-xl border px-3 py-2.5 text-left transition",
+                            enabled
+                              ? "border-gold/35 bg-gold/10 text-gold"
+                              : "border-void-border bg-void-950 text-bone-dim hover:border-gold/25"
+                          )}
+                          title={item.note}
+                        >
+                          <p className="text-xs font-semibold">{item.label}</p>
+                          <p className="mt-1 text-[9px] leading-tight text-bone-faint">{item.note}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-3 text-[10px] leading-relaxed text-bone-faint">
+                    Your selected indicators are remembered on this browser. Community scripts such as LuxAlgo SMC, FVG and Order Blocks must be added in full TradingView.
+                  </p>
+                </section>
+
+                <section className="rounded-2xl border border-void-border bg-void-850 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Globe2 size={16} className="text-gold" />
+                      <h2 className="text-sm font-semibold text-bone">Market Sessions</h2>
+                    </div>
+                    <span className="text-[10px] uppercase tracking-wider text-bone-faint">UTC based</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {tradingSessions.map((session) => {
+                      const state = getSessionState(now, session.startUtc, session.endUtc);
+                      return (
+                        <div
+                          key={session.name}
+                          className={cn(
+                            "rounded-xl border px-3 py-2.5 transition",
+                            state.active
+                              ? "border-profit/30 bg-profit/10"
+                              : "border-void-border bg-void-950"
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={cn(
+                                    "h-2 w-2 rounded-full",
+                                    state.active ? "animate-pulse bg-profit" : "bg-bone-faint"
+                                  )}
+                                />
+                                <p className="text-xs font-semibold text-bone">{session.name}</p>
+                              </div>
+                              <p className="mt-1 text-[10px] text-bone-faint">
+                                {session.startUtc.toString().padStart(2, "0")}:00–
+                                {session.endUtc.toString().padStart(2, "0")}:00 UTC
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className={cn("text-[10px] font-semibold uppercase", state.active ? "text-profit" : "text-bone-faint")}>
+                                {state.active ? "Open" : "Closed"}
+                              </p>
+                              <p className="mt-1 flex items-center justify-end gap-1 text-[10px] text-bone-dim">
+                                <TimerReset size={11} />
+                                {state.active ? "closes" : "opens"} in {formatCountdown(state.minutesUntil)}
+                              </p>
+                            </div>
+                          </div>
+                          <p className="mt-2 text-[10px] text-bone-faint">{session.note}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <a
+                    href="https://www.tradingview.com/scripts/search/market%20sessions/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-gold/25 bg-gold/10 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-gold/15"
+                  >
+                    <Search size={13} />
+                    Find session indicators
+                  </a>
+                  <p className="mt-2 text-[10px] leading-relaxed text-bone-faint">
+                    In TradingView Indicators, search “Market Sessions”, “Forex Sessions”, or “ICT Killzones”.
+                  </p>
                 </section>
 
                 <section className="rounded-2xl border border-void-border bg-void-850 p-4">
@@ -321,6 +488,7 @@ export default function ChartPage() {
             ) : (
               <div className="hidden h-full flex-col items-center gap-4 pt-14 xl:flex">
                 <Calculator size={16} className="text-gold" />
+                <Globe2 size={16} className="text-gold" />
                 <CheckCircle2 size={16} className="text-profit" />
                 <StickyNote size={16} className="text-bone-faint" />
               </div>

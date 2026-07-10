@@ -6,6 +6,7 @@ interface TradingViewWidgetProps {
   symbol?: string;
   height?: number | string;
   interval?: string;
+  studies?: string[];
 }
 
 /**
@@ -16,6 +17,7 @@ export default function TradingViewWidget({
   symbol = "FX:EURUSD",
   height = 560,
   interval = "15",
+  studies = [],
 }: TradingViewWidgetProps) {
   const container = useRef<HTMLDivElement>(null);
 
@@ -47,11 +49,12 @@ export default function TradingViewWidget({
       save_image: true,
       allow_symbol_change: true,
       calendar: false,
+      studies,
       support_host: "https://www.tradingview.com",
     });
 
     container.current.appendChild(script);
-  }, [symbol, interval]);
+  }, [symbol, interval, studies]);
 
   return (
     <div
