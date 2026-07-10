@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 
 interface TradingViewWidgetProps {
   symbol?: string;
-  height?: number;
+  height?: number | string;
   interval?: string;
 }
 
@@ -23,9 +23,6 @@ export default function TradingViewWidget({
     if (!container.current) return;
     container.current.innerHTML = "";
 
-    // TradingView's autosize feature measures against a specific sibling
-    // div — it must exist in the DOM before the script runs, and be
-    // recreated fresh each time (not reused across re-renders).
     const widgetDiv = document.createElement("div");
     widgetDiv.className = "tradingview-widget-container__widget h-full w-full";
     container.current.appendChild(widgetDiv);
@@ -47,6 +44,8 @@ export default function TradingViewWidget({
       hide_top_toolbar: false,
       hide_legend: false,
       save_image: false,
+      allow_symbol_change: true,
+      calendar: false,
       support_host: "https://www.tradingview.com",
     });
 
@@ -55,9 +54,9 @@ export default function TradingViewWidget({
 
   return (
     <div
-      className="tradingview-widget-container w-full min-w-0 overflow-hidden rounded-2xl border border-void-border"
+      className="tradingview-widget-container h-full w-full min-w-0 overflow-hidden rounded-xl border border-void-border"
       ref={container}
-      style={{ height, minHeight: height }}
+      style={{ height, minHeight: typeof height === "number" ? height : undefined }}
     />
   );
 }
