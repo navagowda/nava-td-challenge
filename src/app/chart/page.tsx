@@ -26,6 +26,9 @@ import {
   Trash2,
   Cloud,
   CloudOff,
+  GripVertical,
+  EyeOff,
+  Eye,
 } from "lucide-react";
 import AppShell from "@/components/layout/AppShell";
 import TradingViewWidget from "@/components/TradingViewWidget";
@@ -109,6 +112,10 @@ export default function ChartPage() {
   const [activeIndicators, setActiveIndicators] = useState<string[]>([]);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>("none");
   const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const chartAreaRef = useRef<HTMLDivElement>(null);
+  const toolbarDragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
+  const [drawingToolbarVisible, setDrawingToolbarVisible] = useState(true);
+  const [drawingToolbarPosition, setDrawingToolbarPosition] = useState({ x: 12, y: 12 });
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const loadSequence = useRef(0);
@@ -122,10 +129,25 @@ export default function ChartPage() {
     const savedWatchlist = window.localStorage.getItem("nava-terminal-watchlist-open");
     const savedTools = window.localStorage.getItem("nava-terminal-tools-open");
     const savedIndicators = window.localStorage.getItem("nava-terminal-indicators");
+    const savedDrawingToolbarVisible = window.localStorage.getItem("nava-drawing-toolbar-visible");
+    const savedDrawingToolbarPosition = window.localStorage.getItem("nava-drawing-toolbar-position");
     if (savedWatchlist !== null) setWatchlistOpen(savedWatchlist === "true");
     if (savedTools !== null) setToolsOpen(savedTools === "true");
     if (savedIndicators) {
       try { setActiveIndicators(JSON.parse(savedIndicators)); } catch { /* ignore invalid saved data */ }
+    }
+    if (savedDrawingToolbarVisible !== null) {
+      setDrawingToolbarVisible(savedDrawingToolbarVisible === "true");
+    }
+    if (savedDrawingToolbarPosition) {
+      try {
+        const position = JSON.parse(savedDrawingToolbarPosition) as { x?: unknown; y?: unknown };
+        if (typeof position.x === "number" && typeof position.y === "number") {
+          setDrawingToolbarPosition({ x: position.x, y: position.y });
+        }
+      } catch {
+        // Ignore invalid stored toolbar position.
+      }
     }
   }, []);
 
@@ -160,6 +182,13 @@ export default function ChartPage() {
         if (Array.isArray(workspace.checks)) setChecks(workspace.checks as boolean[]);
         if (typeof workspace.watchlistOpen === "boolean") setWatchlistOpen(workspace.watchlistOpen);
         if (typeof workspace.toolsOpen === "boolean") setToolsOpen(workspace.toolsOpen);
+        if (typeof workspace.drawingToolbarVisible === "boolean") setDrawingToolbarVisible(workspace.drawingToolbarVisible);
+        if (workspace.drawingToolbarPosition && typeof workspace.drawingToolbarPosition === "object") {
+          const position = workspace.drawingToolbarPosition as { x?: unknown; y?: unknown };
+          if (typeof position.x === "number" && typeof position.y === "number") {
+            setDrawingToolbarPosition({ x: position.x, y: position.y });
+          }
+        }
         setDrawings(Array.isArray(data.drawings) ? data.drawings as Drawing[] : []);
       } else {
         setDrawings([]);
@@ -184,6 +213,14 @@ export default function ChartPage() {
   }, [activeIndicators]);
 
   useEffect(() => {
+    window.localStorage.setItem("nava-drawing-toolbar-visible", String(drawingToolbarVisible));
+  }, [drawingToolbarVisible]);
+
+  useEffect(() => {
+    window.localStorage.setItem("nava-drawing-toolbar-position", JSON.stringify(drawingToolbarPosition));
+  }, [drawingToolbarPosition]);
+
+  useEffect(() => {
     if (!workspaceReady) return;
     setSaveState("saving");
     const timer = window.setTimeout(async () => {
@@ -193,7 +230,7 @@ export default function ChartPage() {
 
       const workspace = {
         indicators: activeIndicators, notes, accountBalance, riskPct, stopPips, pipValue,
-        checks, watchlistOpen, toolsOpen,
+        checks, watchlistOpen, toolsOpen, drawingToolbarVisible, drawingToolbarPosition,
       };
       const { error } = await supabase.from("chart_workspaces").upsert({
         user_id: user.id, symbol, interval, workspace, drawings, updated_at: new Date().toISOString(),
@@ -201,7 +238,7 @@ export default function ChartPage() {
       setSaveState(error ? "error" : "saved");
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [workspaceReady, symbol, interval, activeIndicators, notes, accountBalance, riskPct, stopPips, pipValue, checks, watchlistOpen, toolsOpen, drawings]);
+  }, [workspaceReady, symbol, interval, activeIndicators, notes, accountBalance, riskPct, stopPips, pipValue, checks, watchlistOpen, toolsOpen, drawingToolbarVisible, drawingToolbarPosition, drawings]);
 
   const filteredSymbols = symbols.filter((item) =>
     item.label.toLowerCase().includes(query.toLowerCase())
@@ -219,6 +256,39 @@ export default function ChartPage() {
   }, [accountBalance, riskPct, stopPips, pipValue]);
 
   const completedChecks = checks.filter(Boolean).length;
+
+  function startToolbarDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    const area = chartAreaRef.current?.getBoundingClientRect();
+    if (!area) return;
+    toolbarDragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - area.left - drawingToolbarPosition.x,
+      offsetY: event.clientY - area.top - drawingToolbarPosition.y,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function moveToolbar(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = toolbarDragRef.current;
+    const area = chartAreaRef.current?.getBoundingClientRect();
+    if (!drag || drag.pointerId !== event.pointerId || !area) return;
+    const toolbarWidth = 330;
+    const toolbarHeight = 44;
+    const x = Math.max(4, Math.min(area.width - toolbarWidth - 4, event.clientX - area.left - drag.offsetX));
+    const y = Math.max(4, Math.min(area.height - toolbarHeight - 4, event.clientY - area.top - drag.offsetY));
+    setDrawingToolbarPosition({ x, y });
+  }
+
+  function endToolbarDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    if (toolbarDragRef.current?.pointerId !== event.pointerId) return;
+    toolbarDragRef.current = null;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may already be released.
+    }
+  }
 
   return (
     <AppShell fullWidth compact>
@@ -376,7 +446,7 @@ export default function ChartPage() {
           </aside>
 
           <main className="min-w-0 bg-void-950 p-2">
-            <div className="relative h-full min-h-[520px] overflow-hidden rounded-xl">
+            <div ref={chartAreaRef} className="relative h-full min-h-[520px] overflow-hidden rounded-xl">
               <TradingViewWidget
                 symbol={symbol}
                 interval={interval}
@@ -385,16 +455,46 @@ export default function ChartPage() {
               />
               <ChartDrawingOverlay tool={drawingTool} drawings={drawings} onChange={setDrawings} />
 
-              <div className="absolute left-3 top-3 z-30 flex items-center gap-1 rounded-xl border border-void-border bg-void-900/95 p-1.5 shadow-card backdrop-blur">
-                <DrawingButton active={drawingTool === "none"} title="Use chart" onClick={() => setDrawingTool("none")}><TrendingUp size={15} /></DrawingButton>
-                <DrawingButton active={drawingTool === "line"} title="Trend line" onClick={() => setDrawingTool("line")}><Pencil size={15} /></DrawingButton>
-                <DrawingButton active={drawingTool === "horizontal"} title="Horizontal line" onClick={() => setDrawingTool("horizontal")}><Minus size={15} /></DrawingButton>
-                <DrawingButton active={drawingTool === "rectangle"} title="Rectangle" onClick={() => setDrawingTool("rectangle")}><Square size={15} /></DrawingButton>
-                <DrawingButton active={drawingTool === "freehand"} title="Freehand" onClick={() => setDrawingTool("freehand")}><Pencil size={15} className="rotate-12" /></DrawingButton>
-                <span className="mx-1 h-5 w-px bg-void-border" />
-                <DrawingButton title="Undo last NAVA drawing" disabled={drawings.length === 0} onClick={() => setDrawings((current) => current.slice(0, -1))}><Undo2 size={15} /></DrawingButton>
-                <DrawingButton title="Delete all NAVA drawings" disabled={drawings.length === 0} onClick={() => { if (window.confirm("Delete all saved NAVA drawings for this symbol and timeframe?")) setDrawings([]); }}><Trash2 size={15} /></DrawingButton>
-              </div>
+              {drawingToolbarVisible ? (
+                <div
+                  className="absolute z-30 flex items-center gap-1 rounded-xl border border-void-border bg-void-900/95 p-1.5 shadow-card backdrop-blur"
+                  style={{ left: drawingToolbarPosition.x, top: drawingToolbarPosition.y }}
+                >
+                  <button
+                    type="button"
+                    title="Drag drawing toolbar"
+                    aria-label="Drag drawing toolbar"
+                    onPointerDown={startToolbarDrag}
+                    onPointerMove={moveToolbar}
+                    onPointerUp={endToolbarDrag}
+                    onPointerCancel={endToolbarDrag}
+                    className="flex h-8 w-7 touch-none cursor-grab items-center justify-center rounded-lg text-bone-faint hover:bg-void-700 hover:text-gold active:cursor-grabbing"
+                  >
+                    <GripVertical size={15} />
+                  </button>
+                  <DrawingButton active={drawingTool === "none"} title="Use chart" onClick={() => setDrawingTool("none")}><TrendingUp size={15} /></DrawingButton>
+                  <DrawingButton active={drawingTool === "line"} title="Trend line" onClick={() => setDrawingTool("line")}><Pencil size={15} /></DrawingButton>
+                  <DrawingButton active={drawingTool === "horizontal"} title="Horizontal line" onClick={() => setDrawingTool("horizontal")}><Minus size={15} /></DrawingButton>
+                  <DrawingButton active={drawingTool === "rectangle"} title="Rectangle" onClick={() => setDrawingTool("rectangle")}><Square size={15} /></DrawingButton>
+                  <DrawingButton active={drawingTool === "freehand"} title="Freehand" onClick={() => setDrawingTool("freehand")}><Pencil size={15} className="rotate-12" /></DrawingButton>
+                  <span className="mx-1 h-5 w-px bg-void-border" />
+                  <DrawingButton title="Undo last NAVA drawing" disabled={drawings.length === 0} onClick={() => setDrawings((current) => current.slice(0, -1))}><Undo2 size={15} /></DrawingButton>
+                  <DrawingButton title="Delete all NAVA drawings" disabled={drawings.length === 0} onClick={() => { if (window.confirm("Delete all saved NAVA drawings for this symbol and timeframe?")) setDrawings([]); }}><Trash2 size={15} /></DrawingButton>
+                  <span className="mx-1 h-5 w-px bg-void-border" />
+                  <DrawingButton title="Hide drawing toolbar" onClick={() => { setDrawingTool("none"); setDrawingToolbarVisible(false); }}><EyeOff size={15} /></DrawingButton>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  title="Show drawing toolbar"
+                  aria-label="Show drawing toolbar"
+                  onClick={() => setDrawingToolbarVisible(true)}
+                  className="absolute left-3 top-3 z-30 flex h-9 items-center gap-2 rounded-xl border border-void-border bg-void-900/95 px-3 text-xs font-semibold text-bone-dim shadow-card backdrop-blur transition hover:border-gold/40 hover:text-gold"
+                >
+                  <Eye size={15} />
+                  <span className="hidden sm:inline">Drawings</span>
+                </button>
+              )}
 
               {drawingTool !== "none" && (
                 <div className="absolute bottom-3 left-1/2 z-30 -translate-x-1/2 rounded-full border border-gold/25 bg-void-900/95 px-4 py-2 text-[11px] font-semibold text-gold shadow-card">
