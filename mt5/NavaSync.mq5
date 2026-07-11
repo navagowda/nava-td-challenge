@@ -1,137 +1,201 @@
 //+------------------------------------------------------------------+
-//| NavaSync.mq5                                                     |
-//| Sends each closed trade from this MT5 account to your NAVA       |
-//| trading workspace. Free, runs entirely inside your terminal.     |
-//|                                                                    |
-//| SETUP:                                                            |
-//| 1. Copy this file into: MetaTrader 5/MQL5/Experts/                |
-//| 2. Open MetaEditor, compile it (F7).                               |
-//| 3. In MT5: Tools > Options > Expert Advisors >                    |
-//|    check "Allow WebRequest for listed URL" and add your exact     |
-//|    webhook URL, e.g. https://your-app.vercel.app                  |
-//| 4. Drag NavaSync onto any one chart (only one instance needed —   |
-//|    it tracks the whole account, not just that symbol).            |
-//| 5. Set the WebhookURL and SharedSecret inputs below to match      |
-//|    your Vercel environment variables.                             |
+//| NavaSync.mq5 - NAVA Phase 3.1                                   |
+//| Syncs MT5 account status, open positions and newly closed trades |
 //+------------------------------------------------------------------+
 #property strict
+#property version   "3.10"
 
-input string WebhookURL   = "https://your-app.vercel.app/api/mt5/webhook";
-input string SharedSecret = "replace-with-a-long-random-string";
+input string WebhookURL   = "https://nava-td-challenge.vercel.app/api/mt5/sync";
+input string SharedSecret = "CHANGE_TO_YOUR_MT5_WEBHOOK_SECRET";
+input int    SyncSeconds  = 10;
+input int    HistoryLookbackDays = 7;
+
+ulong lastSentDeal = 0;
+
+string EscapeJson(string value)
+{
+   StringReplace(value, "\\", "\\\\");
+   StringReplace(value, "\"", "\\\"");
+   StringReplace(value, "\r", "");
+   StringReplace(value, "\n", "\\n");
+   return value;
+}
+
+string TimeJson(datetime value)
+{
+   return TimeToString(value, TIME_DATE|TIME_SECONDS);
+}
 
 int OnInit()
 {
-   Print("NAVA sync EA initialized. Closed trades will be sent to: ", WebhookURL);
-   return(INIT_SUCCEEDED);
+   if(SyncSeconds < 5)
+   {
+      Print("NAVA: SyncSeconds must be at least 5.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   EventSetTimer(SyncSeconds);
+   Print("NAVA sync started: ", WebhookURL);
+   SendSnapshot();
+   return INIT_SUCCEEDED;
 }
 
 void OnDeinit(const int reason)
 {
+   EventKillTimer();
 }
 
-//+------------------------------------------------------------------+
-//| Fires on every trade-related change on this account               |
-//+------------------------------------------------------------------+
+void OnTimer()
+{
+   SendSnapshot();
+}
+
 void OnTradeTransaction(const MqlTradeTransaction &trans,
-                         const MqlTradeRequest &request,
-                         const MqlTradeResult &result)
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
 {
-   if(trans.type != TRADE_TRANSACTION_DEAL_ADD)
-      return;
-
-   ulong dealTicket = trans.deal;
-   if(!HistoryDealSelect(dealTicket))
-      return;
-
-   long entryType = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
-
-   // Only fire when a position is being closed (fully or partially)
-   if(entryType != DEAL_ENTRY_OUT && entryType != DEAL_ENTRY_OUT_BY)
-      return;
-
-   SendClosedTrade(dealTicket);
+   if(trans.type == TRADE_TRANSACTION_DEAL_ADD)
+      SendSnapshot();
 }
 
-//+------------------------------------------------------------------+
-//| Builds the JSON payload for one closed deal and posts it          |
-//+------------------------------------------------------------------+
-void SendClosedTrade(ulong outDealTicket)
+string BuildAccountJson()
 {
-   string symbol      = HistoryDealGetString(outDealTicket, DEAL_SYMBOL);
-   double exitPrice    = HistoryDealGetDouble(outDealTicket, DEAL_PRICE);
-   double volume       = HistoryDealGetDouble(outDealTicket, DEAL_VOLUME);
-   double profit       = HistoryDealGetDouble(outDealTicket, DEAL_PROFIT)
-                        + HistoryDealGetDouble(outDealTicket, DEAL_SWAP)
-                        + HistoryDealGetDouble(outDealTicket, DEAL_COMMISSION);
-   datetime closeTime  = (datetime)HistoryDealGetInteger(outDealTicket, DEAL_TIME);
-   long positionId     = HistoryDealGetInteger(outDealTicket, DEAL_POSITION_ID);
+   long login = AccountInfoInteger(ACCOUNT_LOGIN);
+   long leverage = AccountInfoInteger(ACCOUNT_LEVERAGE);
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double margin = AccountInfoDouble(ACCOUNT_MARGIN);
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   double marginLevel = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
+   double floating = equity - balance;
 
-   double entryPrice = 0;
-   double stopLoss   = 0;
-   double takeProfit = 0;
-   string direction  = "long";
+   return StringFormat(
+      "{\"login\":%I64d,\"server\":\"%s\",\"broker\":\"%s\",\"name\":\"%s\",\"currency\":\"%s\",\"leverage\":%I64d,\"balance\":%.2f,\"equity\":%.2f,\"margin\":%.2f,\"freeMargin\":%.2f,\"marginLevel\":%.2f,\"floatingPnl\":%.2f}",
+      login,
+      EscapeJson(AccountInfoString(ACCOUNT_SERVER)),
+      EscapeJson(AccountInfoString(ACCOUNT_COMPANY)),
+      EscapeJson(AccountInfoString(ACCOUNT_NAME)),
+      EscapeJson(AccountInfoString(ACCOUNT_CURRENCY)),
+      leverage,balance,equity,margin,freeMargin,marginLevel,floating
+   );
+}
 
-   // Walk this position's full deal history to find the opening deal,
-   // which carries the entry price, direction, and (via its order) SL/TP.
-   if(HistorySelectByPosition(positionId))
+string BuildPositionsJson()
+{
+   string json = "[";
+   bool first = true;
+   int total = PositionsTotal();
+
+   for(int i=0;i<total;i++)
    {
-      int total = HistoryDealsTotal();
-      for(int i = 0; i < total; i++)
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket)) continue;
+
+      if(!first) json += ",";
+      first = false;
+
+      long type = PositionGetInteger(POSITION_TYPE);
+      string direction = type == POSITION_TYPE_SELL ? "short" : "long";
+      json += StringFormat(
+         "{\"ticket\":%I64u,\"symbol\":\"%s\",\"direction\":\"%s\",\"volume\":%.2f,\"openPrice\":%.8f,\"currentPrice\":%.8f,\"stopLoss\":%.8f,\"takeProfit\":%.8f,\"floatingPnl\":%.2f,\"openTime\":\"%s\"}",
+         ticket,
+         EscapeJson(PositionGetString(POSITION_SYMBOL)),
+         direction,
+         PositionGetDouble(POSITION_VOLUME),
+         PositionGetDouble(POSITION_PRICE_OPEN),
+         PositionGetDouble(POSITION_PRICE_CURRENT),
+         PositionGetDouble(POSITION_SL),
+         PositionGetDouble(POSITION_TP),
+         PositionGetDouble(POSITION_PROFIT),
+         TimeJson((datetime)PositionGetInteger(POSITION_TIME))
+      );
+   }
+   return json + "]";
+}
+
+string BuildClosedTradesJson()
+{
+   datetime from = TimeCurrent() - HistoryLookbackDays * 86400;
+   datetime to = TimeCurrent();
+   if(!HistorySelect(from,to)) return "[]";
+
+   string json = "[";
+   bool first = true;
+   int total = HistoryDealsTotal();
+
+   for(int i=0;i<total;i++)
+   {
+      ulong deal = HistoryDealGetTicket(i);
+      if(deal == 0 || deal <= lastSentDeal) continue;
+      long entryType = HistoryDealGetInteger(deal, DEAL_ENTRY);
+      if(entryType != DEAL_ENTRY_OUT && entryType != DEAL_ENTRY_OUT_BY) continue;
+
+      long positionId = HistoryDealGetInteger(deal, DEAL_POSITION_ID);
+      string symbol = HistoryDealGetString(deal, DEAL_SYMBOL);
+      double exitPrice = HistoryDealGetDouble(deal, DEAL_PRICE);
+      double volume = HistoryDealGetDouble(deal, DEAL_VOLUME);
+      double pnl = HistoryDealGetDouble(deal, DEAL_PROFIT)
+                 + HistoryDealGetDouble(deal, DEAL_SWAP)
+                 + HistoryDealGetDouble(deal, DEAL_COMMISSION);
+      datetime closeTime = (datetime)HistoryDealGetInteger(deal, DEAL_TIME);
+
+      double entryPrice = 0, sl = 0, tp = 0;
+      string direction = "long";
+      if(HistorySelectByPosition(positionId))
       {
-         ulong ticket = HistoryDealGetTicket(i);
-         if(ticket == 0)
-            continue;
-
-         if(HistoryDealGetInteger(ticket, DEAL_ENTRY) == DEAL_ENTRY_IN)
+         int ptotal = HistoryDealsTotal();
+         for(int j=0;j<ptotal;j++)
          {
-            entryPrice = HistoryDealGetDouble(ticket, DEAL_PRICE);
-            long dealType = HistoryDealGetInteger(ticket, DEAL_TYPE);
-            direction = (dealType == DEAL_TYPE_BUY) ? "long" : "short";
-
-            ulong openOrder = HistoryDealGetInteger(ticket, DEAL_ORDER);
+            ulong inDeal = HistoryDealGetTicket(j);
+            if(inDeal == 0 || HistoryDealGetInteger(inDeal, DEAL_ENTRY) != DEAL_ENTRY_IN) continue;
+            entryPrice = HistoryDealGetDouble(inDeal, DEAL_PRICE);
+            long dealType = HistoryDealGetInteger(inDeal, DEAL_TYPE);
+            direction = dealType == DEAL_TYPE_SELL ? "short" : "long";
+            ulong openOrder = (ulong)HistoryDealGetInteger(inDeal, DEAL_ORDER);
             if(HistoryOrderSelect(openOrder))
             {
-               stopLoss   = HistoryOrderGetDouble(openOrder, ORDER_SL);
-               takeProfit = HistoryOrderGetDouble(openOrder, ORDER_TP);
+               sl = HistoryOrderGetDouble(openOrder, ORDER_SL);
+               tp = HistoryOrderGetDouble(openOrder, ORDER_TP);
             }
             break;
          }
       }
+
+      if(!first) json += ",";
+      first = false;
+      json += StringFormat(
+         "{\"dealTicket\":%I64u,\"positionId\":%I64d,\"symbol\":\"%s\",\"direction\":\"%s\",\"entry\":%.8f,\"exit\":%.8f,\"stopLoss\":%.8f,\"takeProfit\":%.8f,\"lotSize\":%.2f,\"pnl\":%.2f,\"closeTime\":\"%s\"}",
+         deal,positionId,EscapeJson(symbol),direction,entryPrice,exitPrice,sl,tp,volume,pnl,TimeJson(closeTime)
+      );
+      if(deal > lastSentDeal) lastSentDeal = deal;
    }
+   return json + "]";
+}
 
-   string closeTimeStr = TimeToString(closeTime, TIME_DATE | TIME_SECONDS);
+void SendSnapshot()
+{
+   string body = "{\"account\":" + BuildAccountJson()
+               + ",\"positions\":" + BuildPositionsJson()
+               + ",\"closedTrades\":" + BuildClosedTradesJson() + "}";
 
-   string json = StringFormat(
-      "{\"symbol\":\"%s\",\"direction\":\"%s\",\"entry\":%.5f,\"exit\":%.5f," +
-      "\"stopLoss\":%.5f,\"takeProfit\":%.5f,\"lotSize\":%.2f,\"pnl\":%.2f," +
-      "\"closeTime\":\"%s\"}",
-      symbol, direction, entryPrice, exitPrice,
-      stopLoss, takeProfit, volume, profit, closeTimeStr
-   );
+   char data[];
+   StringToCharArray(body,data,0,WHOLE_ARRAY,CP_UTF8);
+   ArrayResize(data,ArraySize(data)-1);
 
-   uchar data[];
-   int   len = StringToCharArray(json, data, 0, StringLen(json)) - 1;
-   ArrayResize(data, len);
-
-   uchar  result[];
-   string resultHeaders;
+   char result[];
+   string responseHeaders;
    string headers = "Content-Type: application/json\r\nX-NAVA-SECRET: " + SharedSecret + "\r\n";
 
    ResetLastError();
-   int status = WebRequest("POST", WebhookURL, headers, 5000, data, result, resultHeaders);
-
+   int status = WebRequest("POST",WebhookURL,headers,8000,data,result,responseHeaders);
    if(status == -1)
    {
-      int err = GetLastError();
-      Print("NAVA sync failed (error ", err, "). Check Tools > Options > Expert Advisors ",
-            "and confirm the webhook URL is in the allowed list.");
+      Print("NAVA sync error ",GetLastError(),". Add your Vercel domain under Tools > Options > Expert Advisors > Allow WebRequest.");
+      return;
    }
-   else if(status >= 400)
-   {
-      Print("NAVA sync rejected by server. HTTP status: ", status);
-   }
+
+   string response = CharArrayToString(result,0,-1,CP_UTF8);
+   if(status >= 200 && status < 300)
+      Print("NAVA sync OK. HTTP ",status," ",response);
    else
-   {
-      Print("NAVA sync sent for ", symbol, ". HTTP status: ", status);
-   }
+      Print("NAVA sync rejected. HTTP ",status," ",response);
 }

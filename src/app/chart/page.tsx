@@ -273,7 +273,7 @@ export default function ChartPage() {
     const drag = toolbarDragRef.current;
     const area = chartAreaRef.current?.getBoundingClientRect();
     if (!drag || drag.pointerId !== event.pointerId || !area) return;
-    const toolbarWidth = 560;
+    const toolbarWidth = 330;
     const toolbarHeight = 44;
     const x = Math.max(4, Math.min(area.width - toolbarWidth - 4, event.clientX - area.left - drag.offsetX));
     const y = Math.max(4, Math.min(area.height - toolbarHeight - 4, event.clientY - area.top - drag.offsetY));
@@ -478,16 +478,6 @@ export default function ChartPage() {
                   <DrawingButton active={drawingTool === "rectangle"} title="Rectangle" onClick={() => setDrawingTool("rectangle")}><Square size={15} /></DrawingButton>
                   <DrawingButton active={drawingTool === "freehand"} title="Freehand" onClick={() => setDrawingTool("freehand")}><Pencil size={15} className="rotate-12" /></DrawingButton>
                   <span className="mx-1 h-5 w-px bg-void-border" />
-                  <TextDrawingButton active={drawingTool === "bos"} title="Place Break of Structure label" label="BOS" onClick={() => setDrawingTool("bos")} />
-                  <TextDrawingButton active={drawingTool === "choch"} title="Place Change of Character label" label="CH" onClick={() => setDrawingTool("choch")} />
-                  <TextDrawingButton active={drawingTool === "bullish-ob"} title="Draw bullish order block" label="OB+" onClick={() => setDrawingTool("bullish-ob")} />
-                  <TextDrawingButton active={drawingTool === "bearish-ob"} title="Draw bearish order block" label="OB−" onClick={() => setDrawingTool("bearish-ob")} />
-                  <TextDrawingButton active={drawingTool === "bullish-fvg"} title="Draw bullish fair value gap" label="FVG+" onClick={() => setDrawingTool("bullish-fvg")} />
-                  <TextDrawingButton active={drawingTool === "bearish-fvg"} title="Draw bearish fair value gap" label="FVG−" onClick={() => setDrawingTool("bearish-fvg")} />
-                  <TextDrawingButton active={drawingTool === "buy-liquidity"} title="Mark buy-side liquidity" label="BSL" onClick={() => setDrawingTool("buy-liquidity")} />
-                  <TextDrawingButton active={drawingTool === "sell-liquidity"} title="Mark sell-side liquidity" label="SSL" onClick={() => setDrawingTool("sell-liquidity")} />
-                  <TextDrawingButton active={drawingTool === "premium-discount"} title="Draw premium and discount range" label="P/D" onClick={() => setDrawingTool("premium-discount")} />
-                  <span className="mx-1 h-5 w-px bg-void-border" />
                   <DrawingButton title="Undo last NAVA drawing" disabled={drawings.length === 0} onClick={() => setDrawings((current) => current.slice(0, -1))}><Undo2 size={15} /></DrawingButton>
                   <DrawingButton title="Delete all NAVA drawings" disabled={drawings.length === 0} onClick={() => { if (window.confirm("Delete all saved NAVA drawings for this symbol and timeframe?")) setDrawings([]); }}><Trash2 size={15} /></DrawingButton>
                   <span className="mx-1 h-5 w-px bg-void-border" />
@@ -550,47 +540,6 @@ export default function ChartPage() {
                   </div>
                 </section>
 
-
-                <section className="rounded-2xl border border-gold/20 bg-void-850 p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gold">Phase 2</p>
-                      <h2 className="mt-1 text-sm font-semibold text-bone">Smart Money Toolkit</h2>
-                    </div>
-                    <span className="rounded-full bg-gold/10 px-2 py-1 text-[9px] font-semibold text-gold">Cloud saved</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      ["BOS", "bos", "Break of Structure"],
-                      ["CHoCH", "choch", "Change of Character"],
-                      ["Bullish OB", "bullish-ob", "Demand order block"],
-                      ["Bearish OB", "bearish-ob", "Supply order block"],
-                      ["Bullish FVG", "bullish-fvg", "Bullish imbalance"],
-                      ["Bearish FVG", "bearish-fvg", "Bearish imbalance"],
-                      ["Buy liquidity", "buy-liquidity", "Buy-side liquidity"],
-                      ["Sell liquidity", "sell-liquidity", "Sell-side liquidity"],
-                      ["Premium / Discount", "premium-discount", "Range with 50% equilibrium"],
-                    ].map(([label, value, note]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setDrawingTool(value as DrawingTool)}
-                        className={cn(
-                          "rounded-xl border px-3 py-2.5 text-left transition",
-                          drawingTool === value
-                            ? "border-gold/40 bg-gold/10 text-gold"
-                            : "border-void-border bg-void-950 text-bone-dim hover:border-gold/25"
-                        )}
-                      >
-                        <p className="text-[11px] font-semibold">{label}</p>
-                        <p className="mt-1 text-[9px] leading-tight text-bone-faint">{note}</p>
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mt-3 text-[10px] leading-relaxed text-bone-faint">
-                    Select a tool, then click or drag on the chart. These are NAVA annotations and are saved per symbol and timeframe. Because the chart is a free TradingView iframe, the toolkit is manual rather than automatic candle detection.
-                  </p>
-                </section>
 
                 <section className="rounded-2xl border border-void-border bg-void-850 p-4">
                   <div className="mb-3 flex items-center justify-between">
@@ -753,22 +702,6 @@ export default function ChartPage() {
         </div>
       </div>
     </AppShell>
-  );
-}
-
-function TextDrawingButton({ active = false, title, label, onClick }: { active?: boolean; title: string; label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className={cn(
-        "flex h-8 min-w-8 items-center justify-center rounded-lg px-1.5 text-[9px] font-black transition",
-        active ? "bg-gold text-void-950" : "text-bone-faint hover:bg-void-700 hover:text-gold"
-      )}
-    >
-      {label}
-    </button>
   );
 }
 
