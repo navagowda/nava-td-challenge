@@ -1,25 +1,3 @@
-import AppShell from "@/components/layout/AppShell";
-import Topbar from "@/components/layout/Topbar";
-import PositionSizeCalculator from "@/components/risk/PositionSizeCalculator";
-import RiskRewardCalculator from "@/components/risk/RiskRewardCalculator";
-import DailyLossLimit from "@/components/risk/DailyLossLimit";
-import TradingChecklist from "@/components/risk/TradingChecklist";
-import PipCalculator from "@/components/forex/PipCalculator";
-
-export default function RiskPage() {
-  return (
-    <AppShell>
-      <Topbar
-        title="Risk management"
-        subtitle="Every forex trade is sized and checked before it happens"
-      />
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <PositionSizeCalculator />
-        <PipCalculator />
-        <RiskRewardCalculator />
-        <DailyLossLimit />
-        <TradingChecklist />
-      </div>
-    </AppShell>
-  );
-}
+"use client";
+import {useCallback,useEffect,useState} from "react";import AppShell from "@/components/layout/AppShell";import Topbar from "@/components/layout/Topbar";import PositionSizeCalculator from "@/components/risk/PositionSizeCalculator";import RiskRewardCalculator from "@/components/risk/RiskRewardCalculator";import DailyLossLimit from "@/components/risk/DailyLossLimit";import TradingChecklist from "@/components/risk/TradingChecklist";import PipCalculator from "@/components/forex/PipCalculator";import StatCard from "@/components/ui/StatCard";import {Wallet,Activity,TrendingUp,Shield} from "lucide-react";
+export default function RiskPage(){const[a,setA]=useState<any>(null);const load=useCallback(async()=>{try{const r=await fetch("/api/analytics",{cache:"no-store"});const b=await r.json();if(r.ok)setA(b.account)}catch{}},[]);useEffect(()=>{load();const t=window.setInterval(load,10000);return()=>window.clearInterval(t)},[load]);return <AppShell><Topbar title="Risk management" subtitle={a?`Live MT5 account · ${a.currency} · Last sync ${new Date(a.lastSync).toLocaleTimeString()}`:"Waiting for MT5 account sync"}/><div className="mb-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4"><StatCard label="Balance" value={a?.balance??0} prefix="$" decimals={2} icon={<Wallet size={15}/>}/><StatCard label="Equity" value={a?.equity??0} prefix="$" decimals={2} icon={<TrendingUp size={15}/>}/><StatCard label="Floating P&L" value={a?.floatingPnl??0} prefix="$" decimals={2} icon={<Activity size={15}/>}/><StatCard label="Margin level" value={a?.marginLevel??0} suffix="%" decimals={1} icon={<Shield size={15}/>}/></div><div className="grid grid-cols-1 gap-5 lg:grid-cols-2"><PositionSizeCalculator/><PipCalculator/><RiskRewardCalculator/><DailyLossLimit/><TradingChecklist/></div></AppShell>}

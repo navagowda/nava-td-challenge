@@ -1,17 +1,3 @@
-import AppShell from "@/components/layout/AppShell";
-import Topbar from "@/components/layout/Topbar";
-import ReportCard from "@/components/reports/ReportCard";
-import { reports } from "@/lib/mockData";
-
-export default function ReportsPage() {
-  return (
-    <AppShell>
-      <Topbar title="Reports" subtitle="Daily, weekly, and monthly summaries" />
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {reports.map((r, i) => (
-          <ReportCard key={r.id} report={r} delay={i * 0.05} />
-        ))}
-      </div>
-    </AppShell>
-  );
-}
+"use client";
+import {useCallback,useEffect,useState} from "react";import AppShell from "@/components/layout/AppShell";import Topbar from "@/components/layout/Topbar";import ReportCard from "@/components/reports/ReportCard";import GlassCard from "@/components/ui/GlassCard";import {ReportSummary} from "@/types";
+export default function ReportsPage(){const[reports,setReports]=useState<ReportSummary[]>([]);const[error,setError]=useState<string|null>(null);const load=useCallback(async()=>{try{const r=await fetch("/api/analytics",{cache:"no-store"});const b=await r.json();if(!r.ok)throw new Error(b.error||"Reports sync failed");setReports(b.reports??[]);setError(null)}catch(e){setError(e instanceof Error?e.message:"Reports sync failed")}},[]);useEffect(()=>{load();const t=window.setInterval(load,10000);return()=>window.clearInterval(t)},[load]);return <AppShell><Topbar title="Reports" subtitle="Live daily, weekly, and monthly summaries from MT5"/>{error&&<div className="mb-5 rounded-xl border border-loss/30 bg-loss/10 p-3 text-sm text-loss">{error}</div>}<div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">{reports.map((r,i)=><ReportCard key={r.id} report={r} delay={i*.05}/>)}</div>{!reports.length&&<GlassCard className="text-center" hover={false}><p className="text-sm text-bone-dim">Waiting for live trade history.</p></GlassCard>}</AppShell>}
