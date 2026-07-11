@@ -1,2 +1,23 @@
-import AppShell from "@/components/layout/AppShell";import Topbar from "@/components/layout/Topbar";import GlassCard from "@/components/ui/GlassCard";import {BookOpen} from "lucide-react";
-export default function VaultPage(){return <AppShell><Topbar title="Strategy vault" subtitle="Your own playbooks only — demo strategies removed"/><GlassCard className="flex min-h-[320px] flex-col items-center justify-center text-center" hover={false}><div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gold/10 text-gold"><BookOpen size={24}/></div><h2 className="font-display text-xl font-semibold text-bone">No strategies saved yet</h2><p className="mt-2 max-w-md text-sm leading-relaxed text-bone-dim">This page no longer shows sample performance. Add your strategy name to each trade in the journal, and live strategy analytics will appear automatically on the Analytics page.</p></GlassCard></AppShell>}
+import AppShell from "@/components/layout/AppShell";
+import Topbar from "@/components/layout/Topbar";
+import StrategyCard from "@/components/vault/StrategyCard";
+import GlowButton from "@/components/ui/GlowButton";
+import { strategies } from "@/lib/mockData";
+import { Plus } from "lucide-react";
+
+export default function VaultPage() {
+  return (
+    <AppShell>
+      <Topbar title="Strategy vault" subtitle="Every playbook, documented and versioned" />
+      <div className="-mt-4 mb-6 flex justify-end">
+        <GlowButton icon={<Plus size={16} />}>Add strategy</GlowButton>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        {strategies.map((s, i) => (
+          <StrategyCard key={s.id} strategy={s} delay={i * 0.05} />
+        ))}
+      </div>
+    </AppShell>
+  );
+}
